@@ -1,0 +1,129 @@
+El código fuente proporcionado en display.h y display.cpp implementa una interfaz para controlar un Display de Cristal Líquido (LCD), probablemente uno compatible con el controlador Hitachi HD44780 (comúnmente usado en displays como 16x2 o el 20x4 referenciado en el código).
+
+1. Análisis del Archivo display.h
+Este archivo de cabecera define la interfaz pública para interactuar con el módulo LCD.
+
+Tipos de Datos y Estructuras
+Nombre	Tipo	Descripción
+displayConnection_t	enum	Define los modos de conexión de datos posibles al LCD: 4 bits (DISPLAY_CONNECTION_GPIO_4BITS) o 8 bits (DISPLAY_CONNECTION_GPIO_8BITS).
+display_t	struct	Estructura que almacena la configuración del display, conteniendo solo el modo de conexión (connection) de tipo displayConnection_t.
+
+Exportar a Hojas de cálculo
+Declaraciones de Funciones Públicas (Prototypes)
+void displayInit( displayConnection_t connection ): Inicializa el display, configurando el modo de conexión (4 u 8 bits).
+
+void displayCharPositionWrite( uint8_t charPositionX, uint8_t charPositionY ): Establece la posición del cursor para la siguiente operación de escritura, usando coordenadas (X para columna, Y para fila).
+
+void displayStringWrite( const char * str ): Escribe una cadena de caracteres en el display, comenzando desde la posición actual del cursor.
+
+2. Análisis del Archivo display.cpp
+Este archivo contiene la implementación de las funciones declaradas, la lógica de control del display y la gestión de los pines GPIO.
+
+Definiciones Privadas (#define)
+Se definen constantes que representan comandos (Instruction Register - IR) y parámetros de control para el controlador HD44780, como:
+
+Comandos Base: DISPLAY_IR_CLEAR_DISPLAY, DISPLAY_IR_ENTRY_MODE_SET, DISPLAY_IR_DISPLAY_CONTROL, DISPLAY_IR_FUNCTION_SET, DISPLAY_IR_SET_DDRAM_ADDR.
+
+Parámetros de Configuración: Para modo de entrada (incremento/decremento), control del display (encendido/apagado, cursor, parpadeo) y función del set (4/8 bits, 1/2 líneas, tipo de puntos).
+
+Direcciones de Pantalla (DDRAM): Se definen las direcciones de inicio para un display de 20x4:
+
+Línea 1: 0
+
+Línea 2: 64
+
+Línea 3: 20
+
+Línea 4: 84
+
+Señales de Control: DISPLAY_RS_INSTRUCTION (0), DISPLAY_RS_DATA (1) para el pin Register Select, y DISPLAY_RW_WRITE (0), DISPLAY_RW_READ (1) para el pin Read/Write (aunque el código solo usa la escritura).
+
+Mapeo de Pines: Se asignan números simbólicos a los pines del microcontrolador utilizados para la comunicación con el display: DISPLAY_PIN_RS, DISPLAY_PIN_RW, DISPLAY_PIN_EN (Enable), y los pines de datos DISPLAY_PIN_D0 a DISPLAY_PIN_D7.
+
+Acceso al Hardware (Gestión de GPIO's)
+El acceso al hardware (GPIO's) se resuelve mediante el uso de la librería mbed y sus objetos DigitalOut.
+
+Objetos de Salida Digital Globales
+Los pines del microcontrolador conectados al display se instancian como objetos globales DigitalOut (para la escritura).
+
+C++
+
+DigitalOut displayD0( D0 );
+DigitalOut displayD1( D1 );
+// ... hasta D7
+DigitalOut displayRs( D8 );
+DigitalOut displayEn( D9 ); 
+// ... falta un pin para RW, aunque se referencia en #defines, su DigitalOut no está.
+DigitalOut: Es una clase de la librería mbed que permite controlar un pin digital como una salida. Asigna una variable del entorno de mbed (D0, D1, etc.) a un nombre de objeto en el código (displayD0, displayD1, etc.).
+
+Acceso: El valor de un pin se establece simplemente asignando value (0 o 1) al objeto DigitalOut (ej: displayD0 = value;).
+
+Función displayPinWrite
+Esta función es la encargada de escribir el valor lógico (value) en el pin físico del microcontrolador (pinName), gestionando la diferencia entre los modos de 8 bits y 4 bits.
+
+Modo 8 Bits (DISPLAY_CONNECTION_GPIO_8BITS): Escribe en todos los pines de datos D0 a D7, además de RS y EN.
+
+Modo 4 Bits (DISPLAY_CONNECTION_GPIO_4BITS): Solo escribe en los pines de datos D4 a D7, además de RS y EN. Los pines D0 a D3 se ignoran en esta función.
+
+Variables Globales Privadas
+static display_t display: Almacena el estado interno del driver, principalmente el modo de conexión activo.
+
+static bool initial8BitCommunicationIsCompleted: Bandera utilizada exclusivamente durante la secuencia de inicialización del modo de 4 bits para distinguir la primera transmisión de 4 bits (que aún es tratada como un byte de 8 bits en la capa baja) de las subsiguientes transmisiones de 4 bits.
+
+Funciones Privadas (Implementaciones)
+static void displayPinWrite( uint8_t pinName, int value ): (Explicada arriba): Función de bajo nivel para establecer el valor de un pin GPIO según el modo de conexión (4 u 8 bits).
+
+static void displayDataBusWrite( uint8_t dataBus ):
+
+Escribe un byte (dataBus) en los pines de datos del display.
+
+Implementa la lógica de la comunicación:
+
+Modo 8 bits: Escribe los 8 bits en D0-D7, activa y desactiva el pulso EN (Enable) para que el display lea el dato.
+
+Modo 4 bits:
+
+Escribe los 4 bits superiores del byte (D7-D4) en los pines D7-D4 del microcontrolador.
+
+Activa y desactiva el pulso EN.
+
+Escribe los 4 bits inferiores del byte (D3-D0) en los pines D7-D4 del microcontrolador (esto ocurre solo si initial8BitCommunicationIsCompleted es true, es decir, después de la secuencia de inicialización).
+
+Activa y desactiva el pulso EN.
+
+static void displayCodeWrite( bool type, uint8_t dataBus ):
+
+Función de alto nivel para enviar un comando o un dato al LCD.
+
+Establece el pin RS (type) para indicar si se envía una Instrucción (DISPLAY_RS_INSTRUCTION) o Dato (DISPLAY_RS_DATA).
+
+Establece el pin RW en Escritura (DISPLAY_RW_WRITE).
+
+Llama a displayDataBusWrite para enviar el byte al display.
+
+Funciones Públicas (Implementaciones)
+void displayInit( displayConnection_t connection ):
+
+Almacena el modo de conexión.
+
+Ejecuta la secuencia de inicialización requerida por el controlador HD44780, que comienza con tres comandos de Function Set en modo 8 bits, seguidos de la configuración específica para 8 o 4 bits:
+
+Modo 4 Bits: Envía un comando de Function Set que solo usa los 4 bits superiores para instruir al display a pasar a modo 4 bits. Luego establece la bandera initial8BitCommunicationIsCompleted = true; y envía el comando Function Set completo (4 bits, 2 líneas, 5x8 puntos) en la nueva modalidad.
+
+Finalmente, configura el display (apagado, sin cursor), lo limpia y lo enciende con los modos de entrada deseados (incremento de posición, sin shift).
+
+void displayCharPositionWrite( uint8_t charPositionX, uint8_t charPositionY ):
+
+Utiliza un switch para determinar la dirección inicial (DDRAM address) de la fila (charPositionY 0-3).
+
+Combina la dirección inicial de la fila con la posición de la columna (charPositionX).
+
+Envía el resultado como un comando SET DDRAM ADDRESS (DISPLAY_IR_SET_DDRAM_ADDR | address) usando displayCodeWrite.
+
+void displayStringWrite( const char * str ):
+
+Itera sobre la cadena de caracteres (str).
+
+Para cada carácter, llama a displayCodeWrite con DISPLAY_RS_DATA para escribir el byte del carácter en la posición actual del display.
+
+La posición del cursor se incrementa automáticamente si se configuró el Entry Mode Set con Increment en la inicialización.
