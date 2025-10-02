@@ -1,13 +1,9 @@
 //=====[Libraries]=============================================================
 
-#include "smart_home_system.h"
-
+#include "mbed.h"
 //=====[Main function, the program entry point after power on or reset]========
 
 int main()
 {
-    smartHomeSystemInit();
-    while (true) {
-        smartHomeSystemUpdate();
-    }
+    printf("%s\n", "Hello World");
 }
